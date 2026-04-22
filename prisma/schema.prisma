@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ExperienceType {
+  SPATIAL
+  MARKER_BASED
+}
+
+enum ExperienceStatus {
+  IDLE
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum AssetType {
+  IMAGE
+  VIDEO
+  AUDIO
+  MODEL
+  MARKER
+  HDR
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  PAUSED
+  EXPIRED
+  CANCELLED
+}
+
+enum DomainStatus {
+  PENDING
+  ACTIVE
+  FAILED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  passwordHash String @map("password_hash")
+  name         String
+  role         Role   @default(USER)
+
+  businessName String? @map("business_name")
+  country      String?
+  industry     String?
+
+  experiences   Experience[]
+  assets        Asset[]
+  subscriptions Subscription[]
+  domains       Domain[]
+  hdrs          EnvironmentHdr[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Plan {
+  id             String  @id @default(cuid())
+  name           String
+  slug           String  @unique
+  units          Int
+  maxViews       Int     @map("max_views")
+  priceUsd       Decimal @map("price_usd") @db.Decimal(10, 2)
+  priceClp       Decimal @map("price_clp") @db.Decimal(10, 2)
+  priceEur       Decimal @map("price_eur") @db.Decimal(10, 2)
+  interval       String
+  domainCapacity Int     @default(0) @map("domain_capacity")
+  isPublic       Boolean @default(true) @map("is_public")
+  stripePriceId  String? @map("stripe_price_id")
+
+  subscriptions Subscription[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  userId                String             @map("user_id")
+  planId                String             @map("plan_id")
+  status                SubscriptionStatus @default(INACTIVE)
+  gatewaySubscriptionId String?            @map("gateway_subscription_id")
+  currentPeriodStart    DateTime?          @map("current_period_start")
+  currentPeriodEnd      DateTime?          @map("current_period_end")
+  cancelledAt           DateTime?          @map("cancelled_at")
+
+  user User @relation(fields: [userId], references: [id])
+  plan Plan @relation(fields: [planId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("subscriptions")
+}
+
+model Experience {
+  id         String           @id @default(cuid())
+  hashId     String           @unique @map("hash_id")
+  userId     String           @map("user_id")
+  name       String
+  type       ExperienceType   @default(SPATIAL)
+  status     ExperienceStatus @default(IDLE)
+  sceneData  Json?            @map("scene_data")
+  viewsCount Int              @default(0) @map("views_count")
+  productUrl String?          @map("product_url")
+
+  user        User              @relation(fields: [userId], references: [id])
+  assets      Asset[]
+  annotations Annotation[]
+  theme       ExperienceTheme?
+  viewEvents  ViewEvent[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("experiences")
+}
+
+model Asset {
+  id           String    @id @default(cuid())
+  experienceId String?   @map("experience_id")
+  userId       String    @map("user_id")
+  type         AssetType
+  name         String
+  s3Key        String    @map("s3_key")
+  url          String
+  size         Int
+  contentType  String    @map("content_type")
+  width        Int?
+  height       Int?
+  position     Int       @default(0)
+
+  experience Experience? @relation(fields: [experienceId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("assets")
+}
+
+model Annotation {
+  id             String  @id @default(cuid())
+  experienceId   String  @map("experience_id")
+  title          String
+  description    String?
+  posX           Float   @map("pos_x")
+  posY           Float   @map("pos_y")
+  posZ           Float   @map("pos_z")
+  normalX        Float   @map("normal_x")
+  normalY        Float   @map("normal_y")
+  normalZ        Float   @map("normal_z")
+  cameraPosition String? @map("camera_position")
+  fieldOfView    Float?  @map("field_of_view")
+  imageUrl       String? @map("image_url")
+  videoUrl       String? @map("video_url")
+
+  experience Experience @relation(fields: [experienceId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("annotations")
+}
+
+model ExperienceTheme {
+  id              String  @id @default(cuid())
+  experienceId    String  @unique @map("experience_id")
+  backgroundColor String? @map("background_color")
+  textColor       String? @map("text_color")
+  arButtonText    String? @map("ar_button_text")
+  arButtonColor   String? @map("ar_button_color")
+  linkButtonUrl   String? @map("link_button_url")
+  logoUrl         String? @map("logo_url")
+  showWatermark   Boolean @default(true) @map("show_watermark")
+  showShare       Boolean @default(true) @map("show_share")
+  showCamera      Boolean @default(true) @map("show_camera")
+
+  experience Experience @relation(fields: [experienceId], references: [id])
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("experience_themes")
+}
+
+model ViewEvent {
+  id           String  @id @default(cuid())
+  experienceId String  @map("experience_id")
+  ip           String?
+  country      String?
+  city         String?
+  region       String?
+  duration     Int?
+  referer      String?
+
+  experience Experience @relation(fields: [experienceId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("view_events")
+}
+
+model EnvironmentHdr {
+  id        String  @id @default(cuid())
+  userId    String? @map("user_id")
+  name      String
+  assetPath String? @map("asset_path")
+  url       String?
+  isPreset  Boolean @default(false) @map("is_preset")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("environment_hdrs")
+}
+
+model Domain {
+  id           String       @id @default(cuid())
+  userId       String       @map("user_id")
+  name         String       @unique
+  status       DomainStatus @default(PENDING)
+  sslExpiresAt DateTime?    @map("ssl_expires_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("domains")
+}
